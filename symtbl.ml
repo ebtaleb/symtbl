@@ -26,6 +26,37 @@ let mk_while_id x =
 
 let strip s = if s = "" then s else List.hd @@ Str.split (Str.regexp "/") s
 
+let capture_func_args e =
+
+  let ident patt =
+    match patt.pat_desc with
+      | Tpat_var (s,_) -> id_to_string s
+      | _ -> ""
+  in
+
+  let rec h expr =
+  match expr.exp_desc with
+  | Texp_function (_, l, _partial) ->
+    let case = List.hd l in
+
+    let fn_scope = try List.hd !sc with _ -> failwith "not in a function" in
+    let id = ident case.c_lhs in
+
+    let patt = case.c_lhs in
+
+    Printf.printf "capturing param %s from func %s\n" id fn_scope;
+
+    let param_loc, param_env, param_type =
+        (patt.pat_loc, patt.pat_env, patt.pat_type) in
+
+    let gen_type = print_type param_env param_type in
+    Hashtbl.add !vb_tbl id (param_loc, gen_type, fn_scope);
+    Hashtbl.add !typ_tbl id (param_env, param_type);
+    h case.c_rhs
+  | _ -> () in
+
+  h e
+
 module IterArg = struct
   include TypedtreeIter.DefaultIteratorArgument
 
@@ -115,7 +146,8 @@ module IterArg = struct
           match bind.vb_expr.exp_desc with
           | Texp_function _ ->
               begin
-                if ns <> final_scope then begin Printf.printf "pushing func %s : [%s]\n" ns (print_stack !sc); sc := ns :: !sc end
+                if ns <> final_scope then begin Printf.printf "pushing func %s : [%s]\n" ns (print_stack !sc); sc := ns :: !sc end;
+                capture_func_args (bind.vb_expr)
               end
           | Texp_let (rf, (lvb::_), e) ->
               begin
