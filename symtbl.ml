@@ -1,4 +1,5 @@
 open Typedtree
+open Cmt_format
 
 let print_type env typ =
   Format.pp_print_string Format.str_formatter "  ";
@@ -23,7 +24,7 @@ let mk_while_id x =
     while_cnt := !while_cnt + 1;
     Printf.sprintf "while_%d_from_%s" !while_cnt x
 
-let strip s = List.hd @@ Str.split (Str.regexp "/") s
+let strip s = if s = "" then s else List.hd @@ Str.split (Str.regexp "/") s
 
 module IterArg = struct
   include TypedtreeIter.DefaultIteratorArgument
@@ -162,8 +163,11 @@ let vb structure =
   Printf.printf "got %d vbs\n" (Hashtbl.length !vb_tbl);
   Hashtbl.iter (fun k (tl,ty,scope) ->  Printf.printf "%s : %s with scope inside %s\n" k ty scope) !vb_tbl;
   Printf.printf "got %d ids and typ\n" (Hashtbl.length !typ_tbl);
-  Printf.printf "got %d tyd\n" (Hashtbl.length !tydecl_tbl);
-  let res = (Hashtbl.copy !typ_tbl, Hashtbl.copy !tydecl_tbl, Hashtbl.copy !vb_tbl) in
-  Hashtbl.clear !typ_tbl; Hashtbl.clear !tydecl_tbl; Hashtbl.clear !vb_tbl;
-  res
+  Printf.printf "got %d tyd\n" (Hashtbl.length !tydecl_tbl)
 
+let _ =
+    let fn = Sys.argv.(1) in
+    let str = Cmt_format.read_cmt fn in
+    match str.cmt_annots with
+      | Implementation s -> vb s
+      | _ -> failwith "unhandled"
