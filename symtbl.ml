@@ -31,28 +31,43 @@ let capture_func_args e =
   let ident patt =
     match patt.pat_desc with
       | Tpat_var (s,_) -> id_to_string s
-      | _ -> ""
+      (*most probably the function keyword was employed, and patt match is employed on last argument*)
+      (*since the param identifier doesnt appear till the lambda pass, we will just call it param for now*)
+      (*to avoid name conflict in cases of several functions employing the `function` keyword, the syntbl should be*)
+      (*worse even, the match might be an alpha/parametrized data struct*)
+
+
+      (*remodeled as a hashtbl of kary tree desc as follows:*)
+          (*- each tree root is a ocaml module with type decls and whose childrens are ocaml functions*)
+          (*- the nodes are ocaml functions with name parameters, types and whose childrens are either variables (as leaves) or other functions (as local functions)*)
+          (*- the leaves are value bindings of the function parent nodes*)
+      | _ -> "pm_param"
   in
 
   let rec h expr =
   match expr.exp_desc with
   | Texp_function (_, l, _partial) ->
-    let case = List.hd l in
 
+    assert (List.length l > 0);
     let fn_scope = try List.hd !sc with _ -> failwith "not in a function" in
-    let id = ident case.c_lhs in
+    if List.length l > 1 then Printf.printf "function keyword/partial application detected for %s\n" fn_scope else 
+    begin
+      let case = List.hd l in
 
-    let patt = case.c_lhs in
+      let id = ident case.c_lhs in
 
-    Printf.printf "capturing param %s from func %s\n" id fn_scope;
+      let patt = case.c_lhs in
 
-    let param_loc, param_env, param_type =
-        (patt.pat_loc, patt.pat_env, patt.pat_type) in
+      Printf.printf "capturing param %s from func %s\n" id fn_scope;
 
-    let gen_type = print_type param_env param_type in
-    Hashtbl.add !vb_tbl id (param_loc, gen_type, fn_scope);
-    Hashtbl.add !typ_tbl id (param_env, param_type);
-    h case.c_rhs
+      let param_loc, param_env, param_type =
+          (patt.pat_loc, patt.pat_env, patt.pat_type) in
+
+      let gen_type = print_type param_env param_type in
+      Hashtbl.add !vb_tbl id (param_loc, gen_type, fn_scope);
+      Hashtbl.add !typ_tbl id (param_env, param_type);
+      h case.c_rhs
+    end
   | _ -> () in
 
   h e
@@ -134,10 +149,12 @@ module IterArg = struct
     let final_scope = try List.hd !sc with _ -> "toplevel" in
 
     let gen_type = print_type bind.vb_expr.exp_env bind.vb_expr.exp_type in
-    Hashtbl.add !vb_tbl ident (bind.vb_expr.exp_loc, gen_type, final_scope);
-    Hashtbl.add !typ_tbl (strip ident) (bind.vb_expr.exp_env, bind.vb_expr.exp_type);
 
-    Printf.printf "processed %s : [%s]\n" ident (print_stack !sc);
+    if ident <> ident then begin
+        Hashtbl.add !vb_tbl ident (bind.vb_expr.exp_loc, gen_type, final_scope);
+        Hashtbl.add !typ_tbl (strip ident) (bind.vb_expr.exp_env, bind.vb_expr.exp_type);
+        Printf.printf "processed %s : [%s]\n" ident (print_stack !sc)
+    end;
 
     match bind.vb_pat.pat_desc with
       | Tpat_var (s,_) ->
