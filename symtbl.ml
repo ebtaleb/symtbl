@@ -54,7 +54,7 @@ let capture_func_args e =
     begin
       let case = List.hd l in
 
-      let id = ident case.c_lhs in
+      let id = if List.length > 1 then "param" else ident case.c_lhs in
 
       let patt = case.c_lhs in
 

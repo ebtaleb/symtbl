@@ -126,11 +126,6 @@ let rec fold_tree2 f g =
     function
         | Branch (x,ts)-> f x; g x (List.map (fold_tree2 f g) ts)
 
-(*let rec fold_tree3 f z =*)
-    (*function*)
-    (*| Branch (x,[]) -> f x z*)
-    (*| Branch (x, ts) -> fold_tree3 f (f x (fold_tree3 f z))*)
-
 let insert_right (t,p) r = match p with
     Top -> failwith "insert of top"
   | Node(left,up,right) -> (t,Node(left,up,r::right));;
