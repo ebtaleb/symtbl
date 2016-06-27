@@ -2,6 +2,9 @@ open Typedtree
 open Cmt_format
 open Zipper
 
+open Location
+open Lexing
+
 open Printf
 
 type type_and_env = Env.t * Types.type_expr
@@ -47,7 +50,7 @@ let make_for = leaf @@ For
 let make_wh = leaf @@ While
 let make_let = leaf @@ Let
 
-let sc = ref []
+(*let sc = ref []*)
 let tds = ref []
 
 let root n = (create_module n, Top : sym_info zipper)
@@ -59,6 +62,15 @@ let mk_while_id x =
     Printf.sprintf "while_%d_from_%s" !while_cnt x
 
 let strip s = if s = "" then s else List.hd @@ Str.split (Str.regexp "/") s
+
+let get_curr t =
+  match t with
+    | Branch(x, _) ->
+      match x with
+        | Module mi -> ("mod", mi.mod_name)
+        | Function fi -> ("func", fi.fun_name)
+        | ValueBind vb -> ("vb", vb.vb_name)
+        | _ -> ("not", "handled")
 
 let capture_func_args e =
 
@@ -87,70 +99,103 @@ let capture_func_args e =
 
   h e (fun ys -> ys)
 
+let append_and_goto_child n it =
+    last_child_of_pos @@move_down@@ insert_down n it
+
 module IterArg = struct
   include TypedtreeIter.DefaultIteratorArgument
 
-  let enter_expression expr =
-    let curr_scope = try List.hd !sc with _ -> "toplevel" in
-    match expr.exp_desc with
-    (*| Texp_let (rf, (lvb::_), e) ->*)
-      (*begin*)
-      (*match lvb.vb_expr.exp_desc with*)
-      (*| Texp_let (_, _, _) ->*)
-        (*begin*)
-          (*match lvb.vb_pat.pat_desc with*)
-            (*| Tpat_var (s,_) ->*)
-              (*let es = id_to_string s in*)
-              (*if es <> curr_scope then*)
-                (*begin*)
-                  (*Printf.printf "pushing let scope %s : [%s]\n" es (print_stack !sc);*)
-                  (*sc := es :: !sc;*)
-                  (*let upd = move_down @@ insert_down !curr_node (make_let) in curr_node := upd*)
-                (*end*)
-            (*| _ -> ()*)
-        (*end*)
-      (*| _ -> ()*)
-      (*end*)
-    | Texp_for (s, _, _, _, _, _) ->
-      let es = id_to_string s in
-      if es <> curr_scope then
-          begin
-              Printf.printf "entering for loop %s : [%s]\n" es (print_stack !sc);
-              sc := es :: !sc;
-              let upd = move_down @@ insert_down !curr_node (make_for) in curr_node := upd
-          end
-    | Texp_while _ -> 
-        Printf.printf "enter while\n";
-        let ns = mk_while_id curr_scope in sc := ns :: !sc;
-        let upd = move_down @@ insert_down !curr_node (make_wh) in curr_node := upd
-    | _ -> ()
+  let enter_structure_item si =
 
-  let leave_expression expr =
-    match expr.exp_desc with
-    | Texp_for (s, _, _, _, _, _) ->
-        begin
-        let es = id_to_string s in
-        match !sc with
-          | [] -> ()
-          | hd :: tl -> 
-            if es = hd then 
-            begin 
-              Printf.printf "leaving for loop %s : [%s]\n" hd (print_stack !sc); sc := tl;
-              let upd = move_up !curr_node in curr_node := upd
-            end
-        end
-    | Texp_while _ ->
-        begin
-        match !sc with
-          | [] -> ()
-          | hd :: tl -> 
-            begin 
-              Printf.printf "leaving while loop %s : [%s]\n" hd (print_stack !sc);
-              sc := tl;
-              let upd = move_up !curr_node in curr_node := upd
-            end
-        end
-    | _ -> ()
+    let r = match si.str_desc with
+        | Tstr_value (_, [vb]) -> [vb]
+        | Tstr_value (_, vbs) -> [List.hd vbs]
+        | _ -> [] in
+
+    match r with
+      | [] -> ()
+      | [bind] ->
+        match bind.vb_pat.pat_desc with
+          | Tpat_var (s,_) -> 
+              let ns = id_to_string s in
+              match bind.vb_expr.exp_desc with
+              | Texp_function _ ->
+                begin
+                  let args = capture_func_args (bind.vb_expr) in 
+                  Printf.printf "new func %s got %d args\n" ns (List.length args);
+                  let funn = create_fun ns bind.vb_expr.exp_env bind.vb_expr.exp_type args in
+                  curr_node := append_and_goto_child !curr_node funn
+                end;
+
+                let nt, n =  get_curr @@ current_tree !curr_node in
+                Printf.printf "entering func %s\n" n
+              | _ -> 
+                let vb = create_vb ns bind.vb_expr.exp_env bind.vb_expr.exp_type in
+                curr_node := append_and_goto_child !curr_node vb;
+
+                let nt, n =  get_curr @@ current_tree !curr_node in
+                Printf.printf "entering vb %s\n" n
+          | _ -> ()
+
+  let leave_structure_item si =
+
+    let nt, n =  get_curr @@ current_tree !curr_node in
+    let r = match si.str_desc with
+        | Tstr_value (_, [vb]) -> [vb]
+        | Tstr_value (_, vbs) -> [List.hd vbs]
+        | _ -> [] in
+
+    match r with
+      | [] -> ()
+      | [v] ->
+        match v.vb_pat.pat_desc with
+          | Tpat_var (s,_) -> 
+              curr_node := (move_up !curr_node)
+
+
+  (*let enter_expression expr =*)
+    (*let curr_scope = try List.hd !sc with _ -> "toplevel" in*)
+    (*match expr.exp_desc with*)
+    (*| Texp_for (s, _, _, _, _, _) ->*)
+      (*let es = id_to_string s in*)
+      (*if es <> curr_scope then*)
+          (*begin*)
+              (*Printf.printf "entering for loop %s : [%s]\n" es (print_stack !sc);*)
+              (*sc := es :: !sc;*)
+              (*let upd = move_down @@ insert_down !curr_node (make_for) in curr_node := upd*)
+          (*end*)
+    (*| Texp_while _ -> *)
+        (*Printf.printf "enter while\n";*)
+        (*let ns = mk_while_id curr_scope in sc := ns :: !sc;*)
+        (*let upd = move_down @@ insert_down !curr_node (make_wh) in curr_node := upd*)
+    (*| _ -> ()*)
+
+  (*let leave_expression expr =*)
+    (*match expr.exp_desc with*)
+    (*| Texp_for (s, _, _, _, _, _) ->*)
+        (*begin*)
+        (*let es = id_to_string s in*)
+        (*match !sc with*)
+          (*| [] -> ()*)
+          (*| hd :: tl -> *)
+            (*if es = hd then *)
+            (*begin *)
+              (*Printf.printf "leaving for loop %s : [%s]\n" hd (print_stack !sc); sc := tl;*)
+              (*let upd = move_up !curr_node in curr_node := upd*)
+            (*end*)
+        (*end*)
+    (*| Texp_while _ ->*)
+        (*begin*)
+        (*match !sc with*)
+          (*| [] -> ()*)
+          (*| hd :: tl -> *)
+            (*begin *)
+              (*Printf.printf "leaving while loop %s : [%s]\n" hd (print_stack !sc);*)
+              (*sc := tl;*)
+              (*let upd = move_up !curr_node in curr_node := upd*)
+            (*end*)
+        (*end*)
+    (*| _ -> ()*)
 
   let enter_binding bind =
     let ident =
@@ -159,81 +204,81 @@ module IterArg = struct
         | _ -> ""
     in
 
-    (*let saved_let = ref "" in*)
-    (*begin*)
-    (*match bind.vb_expr.exp_desc with*)
-    (*| Texp_let (rf, (lvb::_), e) ->*)
-        (*begin*)
-        (*match bind.vb_pat.pat_desc with*)
-          (*| Tpat_var (s,_) ->*)
-            (*let curr_scope = try List.hd !sc with _ -> "toplevel" in*)
-            (*let ns = id_to_string s in*)
-            (*Printf.printf "let ent %s : [%s]\n" ns (print_stack !sc);*)
-            (*if ns = curr_scope then begin Printf.printf "%s are same must remove tempor\n" ns; saved_let := ns; sc := List.tl !sc end*)
+    let nt, n =  get_curr @@ current_tree !curr_node in
+
+      Printf.printf "inside %s before insert\n" (sprintf "%s %s " nt n);
+
+    if ident <> "" && ident <> n then begin
+      match bind.vb_expr.exp_desc with
+      | Texp_function _ -> ()
+      | _ -> 
+          let vb = create_vb ident bind.vb_expr.exp_env bind.vb_expr.exp_type in
+          let upd = insert_down !curr_node vb in curr_node := upd;
+          Printf.printf "inserted vb %s in %s\n" ident (sprintf "%s %s " nt n)
+    end
+
+    (*let final_scope = try List.hd !sc with _ -> "toplevel" in*)
+
+    (*if ident <> "" then begin*)
+          (*let ns = ident in*)
+          (*match bind.vb_expr.exp_desc with*)
+          (*| Texp_function _ ->*)
+            (*begin*)
+              (*if ns <> final_scope then *)
+              (*begin *)
+                (*Printf.printf "pushing func %s : [%s]\n" ns (print_stack !sc);*)
+                (*sc := ns :: !sc;*)
+                (*let args = capture_func_args (bind.vb_expr) in *)
+                (*Printf.printf "new func %s got %d args\n" ns (List.length args);*)
+                (*let funn = create_fun ns bind.vb_expr.exp_env bind.vb_expr.exp_type args in*)
+                (*let upd = move_down @@ insert_down !curr_node funn in curr_node := upd;*)
+              (*end*)
+            (*end*)
           (*| _ -> ()*)
         (*end*)
-    (*| _ -> () end;*)
 
-    let final_scope = try List.hd !sc with _ -> "toplevel" in
+  (*let leave_binding bind =*)
+    (*let bstr = match bind.vb_expr.exp_desc with*)
+    (*| Texp_function _ -> "func"*)
+    (*| _ -> "" in*)
 
-    if ident <> "" then begin
-      let vb = create_vb ident bind.vb_expr.exp_env bind.vb_expr.exp_type in
-      let upd = insert_down !curr_node vb in curr_node := upd;
-      Printf.printf "processed %s : [%s]\n" ident (print_stack !sc)
-    end;
-
-    match bind.vb_pat.pat_desc with
-      | Tpat_var (s,_) ->
-        begin
-          let ns = id_to_string s in
-          match bind.vb_expr.exp_desc with
-          | Texp_function _ ->
-            begin
-              if ns <> final_scope then 
-              begin 
-                Printf.printf "pushing func %s : [%s]\n" ns (print_stack !sc);
-                sc := ns :: !sc;
-                let args = capture_func_args (bind.vb_expr) in 
-                Printf.printf "got %d args\n" (List.length args);
-                let funn = create_fun ns bind.vb_expr.exp_env bind.vb_expr.exp_type args in
-                let upd = move_down @@ insert_down !curr_node funn in curr_node := upd;
-              end
-            end
-          (*| Texp_let (rf, (lvb::_), e) ->*)
-              (*begin*)
-                  (*if ns = !saved_let then begin Printf.printf "%s are same must restore tempor\n" ns; saved_let := ""; sc := ns :: !sc end;*)
-                (*if final_scope = "toplevel" then sc := ns :: !sc*)
+    (*match bind.vb_expr.exp_desc with*)
+    (*| Texp_function _ ->*)
+      (*begin*)
+      (*match bind.vb_pat.pat_desc with*)
+        (*| Tpat_var (s,_) ->*)
+          (*begin*)
+          (*let es = id_to_string s in*)
+          (*match !sc with*)
+            (*| [] -> ()*)
+            (*| hd :: tl ->*)
+              (*if es = hd then *)
+              (*begin *)
+                (*Printf.printf "poping %s %s : [%s]\n" bstr hd (print_stack !sc); *)
+                (*sc := tl;*)
+                (*let upd = move_up !curr_node in curr_node := upd*)
               (*end*)
-          | _ -> ()
-        end
-      | _ -> ()
-
-  let leave_binding bind =
-    let bstr = match bind.vb_expr.exp_desc with
-    | Texp_function _ -> "func"
-    (*| Texp_let _ -> "let"*)
-    | _ -> "" in
-
-    match bind.vb_expr.exp_desc with
-    | Texp_function _ ->
-    (*| Texp_let _ ->*)
-      begin
-      match bind.vb_pat.pat_desc with
-        | Tpat_var (s,_) ->
-          begin
-          let es = id_to_string s in
-          match !sc with
-            | [] -> ()
-            | hd :: tl ->
-              if es = hd then 
-              begin 
-                Printf.printf "poping %s %s : [%s]\n" bstr hd (print_stack !sc); sc := tl;
-                let upd = move_up !curr_node in curr_node := upd
-              end
-          end
-        | _ -> ()
-      end
-    | _ -> ()
+          (*end*)
+        (*| _ -> ()*)
+      (*end*)
+    (*| _ ->*)
+            (*() *)
+      (*begin*)
+      (*match bind.vb_pat.pat_desc with*)
+        (*| Tpat_var (s,_) ->*)
+          (*begin*)
+          (*let es = id_to_string s in*)
+          (*match !sc with*)
+            (*| [] -> ()*)
+            (*| hd :: tl ->*)
+              (*if es = hd then *)
+              (*begin *)
+                (*Printf.printf "leaving %s \n" (get_curr @@ current_tree !curr_node);*)
+                (*sc := tl;*)
+                (*let upd = move_up !curr_node in curr_node := upd*)
+              (*end*)
+          (*end*)
+      (*end*)
 
   let leave_type_declaration td =
     let ident = id_to_string td.typ_id in
@@ -337,7 +382,7 @@ let vb structure name =
       end
     | _ -> failwith "problem with tree building" in
 
-  sc := [];
+  (*sc := [];*)
   tds := [];
   curr_node := root "";
   let ls = sym_printer 0 res in
