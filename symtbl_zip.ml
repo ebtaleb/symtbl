@@ -12,17 +12,21 @@ type vbind_tbl = (string, type_and_env) Hashtbl.t
 
 type module_info =
     { type_decls : (string * Types.type_declaration) list;
-      mod_name : string;}
+      mod_name : string;
+    }
 
 type function_info =
     { fun_type : type_and_env;
       fun_name : string;
-      fun_args : (string * Env.t * Types.type_expr) list; 
+      fun_args : (string * Env.t * Types.type_expr) list;
+      fun_loc : Location.t;
     }
 
 type value_bind_info =
     { vb_type : type_and_env;
-      vb_name : string;}
+      vb_name : string;
+      vb_loc : Location.t;
+    }
 
 type sym_info = 
     Module of module_info 
@@ -36,6 +40,14 @@ let print_type (env,typ) =
         (fun () -> Printtyp.type_scheme Format.str_formatter typ);
   Format.flush_str_formatter ()
 
+let string_of_loc loc =
+  let (filename, line1, col1) = Location.get_pos_info loc.Location.loc_start in
+  let (_, line2, col2) = Location.get_pos_info loc.Location.loc_end in
+  if line1 = line2 then
+    Printf.sprintf "%s: L%d:C%d" filename line1 col1
+  else 
+    Printf.sprintf "%s: L%d:C%d-L%d:C%d" filename line1 col1 line2 col2
+
 let print_stack x = String.concat ", " x
 
 let id_to_string s =
@@ -44,8 +56,8 @@ let id_to_string s =
     flush_str_formatter ()
 
 let create_module n = leaf @@ Module {mod_name=n; type_decls=[]}
-let create_vb n e t = leaf @@ ValueBind {vb_name=n; vb_type=e,t}
-let create_fun n e t a = leaf @@ Function {fun_name=n; fun_type=e,t; fun_args=a}
+let create_vb n e t l = leaf @@ ValueBind {vb_name=n; vb_type=e,t; vb_loc=l}
+let create_fun n e t a l = leaf @@ Function {fun_name=n; fun_type=e,t; fun_args=a; fun_loc=l}
 let make_for = leaf @@ For
 let make_wh = leaf @@ While
 let make_let = leaf @@ Let
@@ -124,14 +136,14 @@ module IterArg = struct
                 begin
                   let args = capture_func_args (bind.vb_expr) in 
                   Printf.printf "new func %s got %d args\n" ns (List.length args);
-                  let funn = create_fun ns bind.vb_expr.exp_env bind.vb_expr.exp_type args in
+                  let funn = create_fun ns bind.vb_expr.exp_env bind.vb_expr.exp_type args bind.vb_loc in
                   curr_node := append_and_goto_child !curr_node funn
                 end;
 
                 let _, n =  get_curr @@ current_tree !curr_node in
                 Printf.printf "entering func %s\n" n
               | _ -> 
-                let vb = create_vb ns bind.vb_expr.exp_env bind.vb_expr.exp_type in
+                let vb = create_vb ns bind.vb_expr.exp_env bind.vb_expr.exp_type bind.vb_loc in
                 curr_node := append_and_goto_child !curr_node vb;
 
                 let _, n =  get_curr @@ current_tree !curr_node in
@@ -162,8 +174,8 @@ module IterArg = struct
   let enter_expression expr =
     match expr.exp_desc with
     | Texp_for (s, _, _, _, _, _) ->
-              print_endline "entering for loop";
-              let upd = move_down @@ insert_down !curr_node (make_for) in curr_node := upd
+        print_endline "entering for loop";
+        let upd = move_down @@ insert_down !curr_node (make_for) in curr_node := upd
     | Texp_while _ -> 
         Printf.printf "enter while\n";
         let upd = move_down @@ insert_down !curr_node (make_wh) in curr_node := upd
@@ -197,10 +209,10 @@ module IterArg = struct
       | Texp_function _ -> Printf.printf "func found\n";
             let args = capture_func_args (bind.vb_expr) in 
             Printf.printf "new func %s got %d args\n" ident (List.length args);
-            let funn = create_fun ident bind.vb_expr.exp_env bind.vb_expr.exp_type args in
+            let funn = create_fun ident bind.vb_expr.exp_env bind.vb_expr.exp_type args bind.vb_loc in
             let upd = last_child_of_pos @@ move_down @@ insert_down !curr_node funn in curr_node := upd;
       | _ -> 
-          let vb = create_vb ident bind.vb_expr.exp_env bind.vb_expr.exp_type in
+          let vb = create_vb ident bind.vb_expr.exp_env bind.vb_expr.exp_type bind.vb_loc in
           let upd = insert_down !curr_node vb in curr_node := upd;
           Printf.printf "inserted vb %s in %s\n" ident (sprintf "%s %s " nt n)
     end
@@ -213,7 +225,7 @@ module IterArg = struct
         | _ -> ""
     in
 
-    let nt, n =  get_curr @@ current_tree !curr_node in
+    let nt, n = get_curr @@ current_tree !curr_node in
     if ident <> "" && ident <> n then begin
         match bind.vb_expr.exp_desc with
         | Texp_function _ ->
@@ -348,20 +360,24 @@ let find_sym tree sym_name =
     | Module mi -> mi.mod_name
     | Function fi -> fi.fun_name
     | ValueBind vb -> vb.vb_name
-    | _ -> failwith "shouldnt happen" in 
+    | _ -> failwith "n : shouldnt happen" in 
     strip s in
 
-  let rec build_path l =
-      match l with
-      | [] -> ""
-      | hd :: tl -> (n hd) ^ "." ^ build_path tl in
+  let rec build_path = function
+    | [] -> ""
+    | hd :: tl -> (n hd) ^ "." ^ build_path tl in
+
+  let loc = function
+    | Function fi -> string_of_loc fi.fun_loc
+    | ValueBind vb -> string_of_loc vb.vb_loc
+    | _ -> failwith "loc : shouldnt happen" in 
 
   let ms = trav [] (tree, Top) in
   match ms with 
     | [] -> print_endline "no matchs :(" 
     | l ->  print_endline "Candidates are : ";
         List.iter 
-          (fun (x,ps) -> Printf.printf "YES %s\n" ((build_path ps) ^ (n x)); print_endline (print x))
+          (fun (x,ps) -> Printf.printf "%s at {%s}\n" ((build_path ps) ^ (n x)) (loc x); print_endline (print x))
         l
 
 let vb structure name =
