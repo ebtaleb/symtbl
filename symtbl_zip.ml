@@ -307,6 +307,63 @@ let sym_printer indent t =
           @ List.concat @@ List.map trav cs in
   trav t
 
+let find_sym tree sym_name =
+
+  let print x =
+      match x with
+      | Module mi -> 
+        sprintf "mod %s\n" mi.mod_name
+      | Function fi -> 
+        let s = sprintf "func %s : %s\n" fi.fun_name (print_type fi.fun_type) in
+        let args = List.fold_left 
+          (fun ass (n, e, t) -> ass ^ (sprintf "  %s : %s\n" n (print_type (e,t)))) 
+        "" fi.fun_args in
+        s ^  "args are : " ^ args
+      | ValueBind vb ->
+          sprintf "vb %s : %s\n" vb.vb_name (print_type vb.vb_type)
+      | _ -> failwith "shouldnt happen" in 
+
+  let test a b sym = if a = b || b = (strip a) then Some sym else None in
+
+  let is_match t =
+      match t with 
+      Branch(n, cs) ->
+          match n with
+              | Module mi -> test mi.mod_name sym_name n 
+              | Function fi -> test fi.fun_name sym_name n
+              | ValueBind vb -> test vb.vb_name sym_name n
+              | For | While | Let -> None in
+
+  let rec trav matchs z =
+    try
+      let (t,p) = go_ahead z in
+      match (is_match t) with
+        | Some x -> trav ((x, traverse_collect p)::matchs) (t,p) 
+        | _ -> trav matchs (t,p)
+    with exn -> print_endline "reach end"; matchs
+  in 
+
+  let n x = 
+    let s = match x with
+    | Module mi -> mi.mod_name
+    | Function fi -> fi.fun_name
+    | ValueBind vb -> vb.vb_name
+    | _ -> failwith "shouldnt happen" in 
+    strip s in
+
+  let rec build_path l =
+      match l with
+      | [] -> ""
+      | hd :: tl -> (n hd) ^ "." ^ build_path tl in
+
+  let ms = trav [] (tree, Top) in
+  match ms with 
+    | [] -> print_endline "no matchs :(" 
+    | l ->  print_endline "Candidates are : ";
+        List.iter 
+          (fun (x,ps) -> Printf.printf "YES %s\n" ((build_path ps) ^ (n x)); print_endline (print x))
+        l
+
 let vb structure name =
   let mod_name =
     let it = List.hd structure.str_items in
@@ -329,7 +386,11 @@ let vb structure name =
   curr_node := root "";
   let ls = sym_printer 0 res in
   List.iter (print_endline) ls;
-  dump_dot res mod_name
+  dump_dot res mod_name;
+
+  find_sym res "g";
+  find_sym res "tarr";
+  find_sym res "main"
 
 let _ =
     let fn = Sys.argv.(1) in
