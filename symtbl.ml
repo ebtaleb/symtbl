@@ -1,7 +1,7 @@
 open Typedtree
 open Cmt_format
 
-let print_type env typ =
+let rint_type env typ =
   Format.pp_print_string Format.str_formatter "  ";
   Printtyp.wrap_printing_env env
                    (fun () -> Printtyp.type_scheme Format.str_formatter typ);
@@ -50,7 +50,7 @@ let capture_func_args e =
 
     assert (List.length l > 0);
     let fn_scope = try List.hd !sc with _ -> failwith "not in a function" in
-    if List.length l > 1 then Printf.printf "function keyword/partial application detected for %s\n" fn_scope else 
+    if List.length l > 1 then Printf.printf "function keyword/partial application detected for %s\n" fn_scope else
     begin
       let case = List.hd l in
 

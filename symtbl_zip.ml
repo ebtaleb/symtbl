@@ -28,10 +28,10 @@ type value_bind_info =
       vb_loc : Location.t;
     }
 
-type sym_info = 
-    Module of module_info 
-    | Function of function_info 
-    | ValueBind of value_bind_info 
+type sym_info =
+    Module of module_info
+    | Function of function_info
+    | ValueBind of value_bind_info
     | For | While | Let
 
 let print_type (env,typ) =
@@ -43,9 +43,9 @@ let print_type (env,typ) =
 let string_of_loc loc =
   let (filename, line1, col1) = Location.get_pos_info loc.Location.loc_start in
   let (_, line2, col2) = Location.get_pos_info loc.Location.loc_end in
-  if line1 = line2 then
+  if line1 line2 then
     Printf.sprintf "%s: L%d:C%d" filename line1 col1
-  else 
+  else
     Printf.sprintf "%s: L%d:C%d-L%d:C%d" filename line1 col1 line2 col2
 
 let print_stack x = String.concat ", " x
@@ -128,13 +128,13 @@ module IterArg = struct
       | [bind] ->
         begin
         match bind.vb_pat.pat_desc with
-          | Tpat_var (s,_) -> 
+          | Tpat_var (s,_) ->
               let ns = id_to_string s in
               begin
               match bind.vb_expr.exp_desc with
               | Texp_function _ ->
                 begin
-                  let args = capture_func_args (bind.vb_expr) in 
+                  let args = capture_func_args (bind.vb_expr) in
                   Printf.printf "new func %s got %d args\n" ns (List.length args);
                   let funn = create_fun ns bind.vb_expr.exp_env bind.vb_expr.exp_type args bind.vb_loc in
                   curr_node := append_and_goto_child !curr_node funn
@@ -142,7 +142,7 @@ module IterArg = struct
 
                 let _, n =  get_curr @@ current_tree !curr_node in
                 Printf.printf "entering func %s\n" n
-              | _ -> 
+              | _ ->
                 let vb = create_vb ns bind.vb_expr.exp_env bind.vb_expr.exp_type bind.vb_loc in
                 curr_node := append_and_goto_child !curr_node vb;
 
@@ -165,7 +165,7 @@ module IterArg = struct
       | [v] ->
         begin
         match v.vb_pat.pat_desc with
-          | Tpat_var (s,_) -> 
+          | Tpat_var (s,_) ->
               curr_node := (move_up !curr_node)
           | _ -> ()
         end
@@ -176,7 +176,7 @@ module IterArg = struct
     | Texp_for (s, _, _, _, _, _) ->
         print_endline "entering for loop";
         let upd = move_down @@ insert_down !curr_node (make_for) in curr_node := upd
-    | Texp_while _ -> 
+    | Texp_while _ ->
         Printf.printf "enter while\n";
         let upd = move_down @@ insert_down !curr_node (make_wh) in curr_node := upd
     | _ -> ()
@@ -184,12 +184,12 @@ module IterArg = struct
   let leave_expression expr =
     match expr.exp_desc with
     | Texp_for (s, _, _, _, _, _) ->
-            begin 
+            begin
               Printf.printf "leaving for loop\n";
               let upd = move_up !curr_node in curr_node := upd
             end
     | Texp_while _ ->
-            begin 
+            begin
                 Printf.printf "leaving while loop\n";
               let upd = move_up !curr_node in curr_node := upd
             end
@@ -207,11 +207,11 @@ module IterArg = struct
     if ident <> "" && ident <> n then begin
       match bind.vb_expr.exp_desc with
       | Texp_function _ -> Printf.printf "func found\n";
-            let args = capture_func_args (bind.vb_expr) in 
+            let args = capture_func_args (bind.vb_expr) in
             Printf.printf "new func %s got %d args\n" ident (List.length args);
             let funn = create_fun ident bind.vb_expr.exp_env bind.vb_expr.exp_type args bind.vb_loc in
             let upd = last_child_of_pos @@ move_down @@ insert_down !curr_node funn in curr_node := upd;
-      | _ -> 
+      | _ ->
           let vb = create_vb ident bind.vb_expr.exp_env bind.vb_expr.exp_type bind.vb_loc in
           let upd = insert_down !curr_node vb in curr_node := upd;
           Printf.printf "inserted vb %s in %s\n" ident (sprintf "%s %s " nt n)
@@ -252,9 +252,9 @@ let dump_dot t n =
 
   let print x =
       let s = match x with
-      | Module mi -> 
+      | Module mi ->
             "MOD"^mi.mod_name
-      | Function fi -> 
+      | Function fi ->
               "FUN"^fi.fun_name
       | ValueBind vb ->
               "VB"^vb.vb_name
@@ -284,7 +284,7 @@ let dump_dot t n =
   fprintf oc "}\n"; close_out oc
 
 let sym_printer indent t =
-  let is_in x = 
+  let is_in x =
     match x with
       | Module mi -> sprintf "ins mod %s " mi.mod_name
       | Function fi -> sprintf "ins func %s" fi.fun_name
@@ -293,12 +293,12 @@ let sym_printer indent t =
 
   let print x =
       let s = match x with
-      | Module mi -> 
+      | Module mi ->
         sprintf "mod %s\n" mi.mod_name
-      | Function fi -> 
+      | Function fi ->
         let s = sprintf "func %s : %s\n" fi.fun_name (print_type fi.fun_type) in
-        let args = List.fold_left 
-          (fun ass (n, e, t) -> ass ^ (sprintf "  %s : %s\n" n (print_type (e,t)))) 
+        let args = List.fold_left
+          (fun ass (n, e, t) -> ass ^ (sprintf "  %s : %s\n" n (print_type (e,t))))
         "" fi.fun_args in
         s ^  "args are : " ^ args
       | ValueBind vb ->
@@ -323,25 +323,25 @@ let find_sym tree sym_name =
 
   let print x =
       match x with
-      | Module mi -> 
+      | Module mi ->
         sprintf "mod %s\n" mi.mod_name
-      | Function fi -> 
+      | Function fi ->
         let s = sprintf "func %s : %s\n" fi.fun_name (print_type fi.fun_type) in
-        let args = List.fold_left 
-          (fun ass (n, e, t) -> ass ^ (sprintf "  %s : %s\n" n (print_type (e,t)))) 
+        let args = List.fold_left
+          (fun ass (n, e, t) -> ass ^ (sprintf "  %s : %s\n" n (print_type (e,t))))
         "" fi.fun_args in
         s ^  "args are : " ^ args
       | ValueBind vb ->
           sprintf "vb %s : %s\n" vb.vb_name (print_type vb.vb_type)
-      | _ -> failwith "shouldnt happen" in 
+      | _ -> failwith "shouldnt happen" in
 
   let test a b sym = if a = b || b = (strip a) then Some sym else None in
 
   let is_match t =
-      match t with 
+      match t with
       Branch(n, cs) ->
           match n with
-              | Module mi -> test mi.mod_name sym_name n 
+              | Module mi -> test mi.mod_name sym_name n
               | Function fi -> test fi.fun_name sym_name n
               | ValueBind vb -> test vb.vb_name sym_name n
               | For | While | Let -> None in
@@ -350,17 +350,17 @@ let find_sym tree sym_name =
     try
       let (t,p) = go_ahead z in
       match (is_match t) with
-        | Some x -> trav ((x, traverse_collect p)::matchs) (t,p) 
+        | Some x -> trav ((x, traverse_collect p)::matchs) (t,p)
         | _ -> trav matchs (t,p)
     with exn -> print_endline "reach end"; matchs
-  in 
+  in
 
-  let n x = 
+  let n x =
     let s = match x with
     | Module mi -> mi.mod_name
     | Function fi -> fi.fun_name
     | ValueBind vb -> vb.vb_name
-    | _ -> failwith "n : shouldnt happen" in 
+    | _ -> failwith "n : shouldnt happen" in
     strip s in
 
   let rec build_path = function
@@ -370,13 +370,13 @@ let find_sym tree sym_name =
   let loc = function
     | Function fi -> string_of_loc fi.fun_loc
     | ValueBind vb -> string_of_loc vb.vb_loc
-    | _ -> failwith "loc : shouldnt happen" in 
+    | _ -> failwith "loc : shouldnt happen" in
 
   let ms = trav [] (tree, Top) in
-  match ms with 
-    | [] -> print_endline "no matchs :(" 
+  match ms with
+    | [] -> print_endline "no matchs :("
     | l ->  print_endline "Candidates are : ";
-        List.iter 
+        List.iter
           (fun (x,ps) -> Printf.printf "%s at {%s}\n" ((build_path ps) ^ (n x)) (loc x); print_endline (print x))
         l
 
@@ -387,12 +387,12 @@ let vb structure name =
     Filename.chop_extension @@ String.capitalize s in
   curr_node := root mod_name;
   MyIterator.iter_structure structure;
-  let res = match !curr_node with 
-    | (final, Top) -> 
+  let res = match !curr_node with
+    | (final, Top) ->
       begin
         match final with
-        | Branch (v, cs) -> 
-          match v with 
+        | Branch (v, cs) ->
+          match v with
             | Module mi -> Branch (Module {mi with type_decls = !tds}, cs)
             | _ -> final
       end
